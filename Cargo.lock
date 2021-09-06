@@ -18,6 +18,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "alliance-wallet-program"
+version = "0.5.0"
+dependencies = [
+ "anchor-lang",
+]
+
+[[package]]
 name = "anchor-attribute-access-control"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -832,13 +839,6 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
-]
-
-[[package]]
-name = "serum-multisig"
-version = "0.5.0"
-dependencies = [
- "anchor-lang",
 ]
 
 [[package]]

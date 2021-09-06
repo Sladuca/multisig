@@ -1,5 +1,5 @@
 [package]
-name = "serum-multisig"
+name = "alliance-wallet-program"
 version = "0.5.0"
 description = "Created with Anchor"
 edition = "2018"

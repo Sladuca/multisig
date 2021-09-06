@@ -1,20 +1,20 @@
-//! An example of a multisig to execute arbitrary Solana transactions.
+//! An example of a social_recovery to execute arbitrary Solana transactions.
 //!
-//! This program can be used to allow a multisig to govern anything a regular
-//! Pubkey can govern. One can use the multisig as a BPF program upgrade
+//! This program can be used to allow a social_recovery to govern anything a regular
+//! Pubkey can govern. One can use the social_recovery as a BPF program upgrade
 //! authority, a mint authority, etc.
 //!
-//! To use, one must first create a `Multisig` account, specifying two important
+//! To use, one must first create a `SocialRecovery` account, specifying two important
 //! parameters:
 //!
-//! 1. Owners - the set of addresses that sign transactions for the multisig.
+//! 1. Allies - the set of addresses that sign transactions for the social_recovery.
 //! 2. Threshold - the number of signers required to execute a transaction.
 //!
-//! Once the `Multisig` account is created, one can create a `Transaction`
+//! Once the `SocialRecovery` account is created, one can create a `Transaction`
 //! account, specifying the parameters for a normal solana transaction.
 //!
-//! To sign, owners should invoke the `approve` instruction, and finally,
-//! the `execute_transaction`, once enough (i.e. `threhsold`) of the owners have
+//! To sign, allies should invoke the `approve` instruction, and finally,
+//! the `execute_transaction`, once enough (i.e. `threhsold`) of the allies have
 //! signed.
 
 use anchor_lang::prelude::*;
@@ -23,235 +23,149 @@ use anchor_lang::solana_program::instruction::Instruction;
 use std::convert::Into;
 
 #[program]
-pub mod serum_multisig_impl {
+pub mod serum_social_recovery_impl {
     use super::*;
 
-    // Initializes a new multisig account with a set of owners and a threshold.
-    pub fn create_multisig(
-        ctx: Context<CreateMultisig>,
-        owners: Vec<Pubkey>,
+    // Initializes a new social_recovery account with a set of allies and a threshold.
+    pub fn create_social_recovery(
+        ctx: Context<CreateSocialRecovery>,
+        allies: Vec<Pubkey>,
         threshold: u64,
         nonce: u8,
     ) -> Result<()> {
-        let multisig = &mut ctx.accounts.multisig;
-        multisig.owners = owners;
-        multisig.threshold = threshold;
-        multisig.nonce = nonce;
-        multisig.owner_set_seqno = 0;
+        let social_recovery = &mut ctx.accounts.social_recovery;
+        social_recovery.allies = allies;
+        social_recovery.threshold = threshold;
+        social_recovery.nonce = nonce;
+        social_recovery.alliance_seqno = 0;
         Ok(())
     }
 
-    // Creates a new transaction account, automatically signed by the creator,
-    // which must be one of the owners of the multisig.
-    pub fn create_transaction(
-        ctx: Context<CreateTransaction>,
-        pid: Pubkey,
-        accs: Vec<TransactionAccount>,
-        data: Vec<u8>,
-    ) -> Result<()> {
-        let owner_index = ctx
-            .accounts
-            .multisig
-            .owners
-            .iter()
-            .position(|a| a == ctx.accounts.proposer.key)
-            .ok_or(ErrorCode::InvalidOwner)?;
-
-        let mut signers = Vec::new();
-        signers.resize(ctx.accounts.multisig.owners.len(), false);
-        signers[owner_index] = true;
-
-        let tx = &mut ctx.accounts.transaction;
-        tx.program_id = pid;
-        tx.accounts = accs;
-        tx.data = data;
-        tx.signers = signers;
-        tx.multisig = *ctx.accounts.multisig.to_account_info().key;
-        tx.did_execute = false;
-        tx.owner_set_seqno = ctx.accounts.multisig.owner_set_seqno;
-
-        Ok(())
-    }
-
-    // Approves a transaction on behalf of an owner of the multisig.
-    pub fn approve(ctx: Context<Approve>) -> Result<()> {
-        let owner_index = ctx
-            .accounts
-            .multisig
-            .owners
-            .iter()
-            .position(|a| a == ctx.accounts.owner.key)
-            .ok_or(ErrorCode::InvalidOwner)?;
-
-        ctx.accounts.transaction.signers[owner_index] = true;
-
-        Ok(())
-    }
-
-    // Set owners and threshold at once.
-    pub fn set_owners_and_change_threshold<'info>(
+    // Set allies and threshold at once.
+    pub fn set_allies_and_change_threshold<'info>(
         ctx: Context<'_, '_, '_, 'info, Auth<'info>>,
-        owners: Vec<Pubkey>,
+        allies: Vec<Pubkey>,
         threshold: u64,
     ) -> Result<()> {
-        set_owners(
+        set_allies(
             Context::new(ctx.program_id, ctx.accounts, ctx.remaining_accounts),
-            owners,
+            allies,
         )?;
         change_threshold(ctx, threshold)
     }
 
-    // Sets the owners field on the multisig. The only way this can be invoked
-    // is via a recursive call from execute_transaction -> set_owners.
-    pub fn set_owners(ctx: Context<Auth>, owners: Vec<Pubkey>) -> Result<()> {
-        let multisig = &mut ctx.accounts.multisig;
+    // Sets the allies field on the social_recovery. The only way this can be invoked
+    // is via a recursive call from execute_transaction -> set_allies.
+    pub fn set_allies(ctx: Context<Auth>, allies: Vec<Pubkey>) -> Result<()> {
+        let social_recovery = &mut ctx.accounts.social_recovery;
 
-        if (owners.len() as u64) < multisig.threshold {
-            multisig.threshold = owners.len() as u64;
+        if (allies.len() as u64) < social_recovery.threshold {
+            social_recovery.threshold = allies.len() as u64;
         }
 
-        multisig.owners = owners;
-        multisig.owner_set_seqno += 1;
+        social_recovery.allies = allies;
+        social_recovery.alliance_seqno += 1;
 
         Ok(())
     }
 
-    // Changes the execution threshold of the multisig. The only way this can be
+    // Changes the execution threshold of the social_recovery. The only way this can be
     // invoked is via a recursive call from execute_transaction ->
     // change_threshold.
     pub fn change_threshold(ctx: Context<Auth>, threshold: u64) -> Result<()> {
-        if threshold > ctx.accounts.multisig.owners.len() as u64 {
+        if threshold > ctx.accounts.social_recovery.allies.len() as u64 {
             return Err(ErrorCode::InvalidThreshold.into());
         }
-        let multisig = &mut ctx.accounts.multisig;
-        multisig.threshold = threshold;
+        let social_recovery = &mut ctx.accounts.social_recovery;
+        social_recovery.threshold = threshold;
         Ok(())
     }
 
-    // Executes the given transaction if threshold owners have signed it.
-    pub fn execute_transaction(ctx: Context<ExecuteTransaction>) -> Result<()> {
-        // Has this been executed already?
-        if ctx.accounts.transaction.did_execute {
-            return Err(ErrorCode::AlreadyExecuted.into());
-        }
+    // Executes the given transaction
+    pub fn execute_transaction(ctx: Context<ExecuteTransaction>, program_id: Pubkey, accs: Vec<TransactionAccount>, data: Vec<u8>) -> Result<()> {
 
-        // Do we have enough signers.
-        let sig_count = ctx
-            .accounts
-            .transaction
-            .signers
-            .iter()
-            .filter(|&did_sign| *did_sign)
-            .count() as u64;
-        if sig_count < ctx.accounts.multisig.threshold {
-            return Err(ErrorCode::NotEnoughSigners.into());
-        }
+        let insn = Instruction {
+            program_id,
+            accounts: accs.iter().map(|a| a.into()).collect(),
+            data
+        };
 
-        // Execute the transaction signed by the multisig.
-        let mut ix: Instruction = (&*ctx.accounts.transaction).into();
-        ix.accounts = ix
+        insn.accounts = insn
             .accounts
             .iter()
             .map(|acc| {
                 let mut acc = acc.clone();
-                if &acc.pubkey == ctx.accounts.multisig_signer.key {
+                if &acc.pubkey == ctx.accounts.signer.key {
                     acc.is_signer = true;
                 }
                 acc
             })
             .collect();
         let seeds = &[
-            ctx.accounts.multisig.to_account_info().key.as_ref(),
-            &[ctx.accounts.multisig.nonce],
+            ctx.accounts.social_recovery.to_account_info().key.as_ref(),
+            &[ctx.accounts.social_recovery.nonce],
         ];
+
         let signer = &[&seeds[..]];
         let accounts = ctx.remaining_accounts;
-        solana_program::program::invoke_signed(&ix, accounts, signer)?;
-
-        // Burn the transaction to ensure one time use.
-        ctx.accounts.transaction.did_execute = true;
+        solana_program::program::invoke_signed(&insn, accounts, signer)?;
 
         Ok(())
     }
 }
 
 #[derive(Accounts)]
-pub struct CreateMultisig<'info> {
+pub struct CreateSocialRecovery<'info> {
     #[account(init)]
-    multisig: ProgramAccount<'info, Multisig>,
+    social_recovery: ProgramAccount<'info, SocialRecovery>,
     rent: Sysvar<'info, Rent>,
-}
-
-#[derive(Accounts)]
-pub struct CreateTransaction<'info> {
-    multisig: ProgramAccount<'info, Multisig>,
-    #[account(init)]
-    transaction: ProgramAccount<'info, Transaction>,
-    // One of the owners. Checked in the handler.
-    #[account(signer)]
-    proposer: AccountInfo<'info>,
-    rent: Sysvar<'info, Rent>,
-}
-
-#[derive(Accounts)]
-pub struct Approve<'info> {
-    #[account(constraint = multisig.owner_set_seqno == transaction.owner_set_seqno)]
-    multisig: ProgramAccount<'info, Multisig>,
-    #[account(mut, has_one = multisig)]
-    transaction: ProgramAccount<'info, Transaction>,
-    // One of the multisig owners. Checked in the handler.
-    #[account(signer)]
-    owner: AccountInfo<'info>,
 }
 
 #[derive(Accounts)]
 pub struct Auth<'info> {
     #[account(mut)]
-    multisig: ProgramAccount<'info, Multisig>,
+    social_recovery: ProgramAccount<'info, SocialRecovery>,
     #[account(signer, seeds = [
-        multisig.to_account_info().key.as_ref(),
-        &[multisig.nonce],
+        social_recovery.to_account_info().key.as_ref(),
+        &[social_recovery.nonce],
     ])]
-    multisig_signer: AccountInfo<'info>,
+    social_recovery_signer: AccountInfo<'info>,
 }
 
 #[derive(Accounts)]
 pub struct ExecuteTransaction<'info> {
-    #[account(constraint = multisig.owner_set_seqno == transaction.owner_set_seqno)]
-    multisig: ProgramAccount<'info, Multisig>,
-    #[account(seeds = [
-        multisig.to_account_info().key.as_ref(),
-        &[multisig.nonce],
+    #[account(constraint = &social_recovery.signer == signer.key)]
+    social_recovery: ProgramAccount<'info, SocialRecovery>,
+    #[account(signer, seeds = [
+        social_recovery.to_account_info().key.as_ref(),
+        &[social_recovery.nonce],
     ])]
-    multisig_signer: AccountInfo<'info>,
-    #[account(mut, has_one = multisig)]
-    transaction: ProgramAccount<'info, Transaction>,
+    signer: AccountInfo<'info>,
 }
 
 #[account]
-pub struct Multisig {
-    pub owners: Vec<Pubkey>,
+pub struct SocialRecovery {
+    pub signer: Pubkey,
+    pub allies: Vec<Pubkey>,
     pub threshold: u64,
     pub nonce: u8,
-    pub owner_set_seqno: u32,
+    pub alliance_seqno: u32,
 }
 
 #[account]
 pub struct Transaction {
-    // The multisig account this transaction belongs to.
-    pub multisig: Pubkey,
+    // The social_recovery account this transaction belongs to.
+    pub social_recovery: Pubkey,
     // Target program to execute against.
     pub program_id: Pubkey,
     // Accounts requried for the transaction.
     pub accounts: Vec<TransactionAccount>,
     // Instruction data for the transaction.
     pub data: Vec<u8>,
-    // signers[index] is true iff multisig.owners[index] signed the transaction.
-    pub signers: Vec<bool>,
     // Boolean ensuring one time execution.
     pub did_execute: bool,
-    // Owner set sequence number.
-    pub owner_set_seqno: u32,
+    // sequence number.
+    pub alliance_seqno: u32,
 }
 
 impl From<&Transaction> for Instruction {
@@ -292,9 +206,9 @@ impl From<&AccountMeta> for TransactionAccount {
 
 #[error]
 pub enum ErrorCode {
-    #[msg("The given owner is not part of this multisig.")]
+    #[msg("The given owner is not part of this social_recovery.")]
     InvalidOwner,
-    #[msg("Not enough owners signed this transaction.")]
+    #[msg("Not enough allies signed this transaction.")]
     NotEnoughSigners,
     #[msg("Cannot delete a transaction that has been signed by an owner.")]
     TransactionAlreadySigned,
@@ -304,6 +218,6 @@ pub enum ErrorCode {
     UnableToDelete,
     #[msg("The given transaction has already been executed.")]
     AlreadyExecuted,
-    #[msg("Threshold must be less than or equal to the number of owners.")]
+    #[msg("Threshold must be less than or equal to the number of allies.")]
     InvalidThreshold,
 }

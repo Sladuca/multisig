@@ -1,76 +1,75 @@
 const anchor = require("@project-serum/anchor");
 const assert = require("assert");
 
-describe("multisig", () => {
+describe("social recorvery", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.Provider.env());
 
   const program = anchor.workspace.SerumMultisig;
 
-  it("Tests the multisig program", async () => {
-    const multisig = anchor.web3.Keypair.generate();
+  it("is just a proxy when sender is the wallet's signer", async () => {
+    const socialRecovery = anchor.web3.Keypair.generate();
     const [
-      multisigSigner,
+      socialRecovery,
       nonce,
     ] = await anchor.web3.PublicKey.findProgramAddress(
-      [multisig.publicKey.toBuffer()],
+      [socialRecovery.publicKey.toBuffer()],
       program.programId
     );
-    const multisigSize = 200; // Big enough.
 
-    const ownerA = anchor.web3.Keypair.generate();
-    const ownerB = anchor.web3.Keypair.generate();
-    const ownerC = anchor.web3.Keypair.generate();
-    const ownerD = anchor.web3.Keypair.generate();
-    const owners = [ownerA.publicKey, ownerB.publicKey, ownerC.publicKey];
+    const socialRecoverySize = 200; // Big enough.
 
-    const threshold = new anchor.BN(2);
-    await program.rpc.createMultisig(owners, threshold, nonce, {
+    const allyA = anchor.web3.Keypair.generate();
+    const allyB = anchor.web3.Keypair.generate();
+    const allyC = anchor.web3.Keypair.generate();
+    const allyD = anchor.web3.Keypair.generate();
+    const allies = [allyA.publicKey, allyB.publicKey, allyC.publicKey];
+
+    const threshold = new anchor.BN(3);
+    await program.rpc.createSocialRecovery(allies, threshold, nonce, {
       accounts: {
-        multisig: multisig.publicKey,
+        socialRecovery: socialRecovery.publicKey,
         rent: anchor.web3.SYSVAR_RENT_PUBKEY,
       },
       instructions: [
-        await program.account.multisig.createInstruction(
-          multisig,
-          multisigSize
+        await program.account.socialRecovery.createInstruction(
+          socialRecovery,
+          socialRecoverySize
         ),
       ],
-      signers: [multisig],
+      signers: [socialRecovery],
     });
 
-    let multisigAccount = await program.account.multisig.fetch(multisig.publicKey);
-    assert.strictEqual(multisigAccount.nonce, nonce);
-    assert.ok(multisigAccount.threshold.eq(new anchor.BN(2)));
-    assert.deepStrictEqual(multisigAccount.owners, owners);
-    assert.ok(multisigAccount.ownerSetSeqno === 0);
+    let socialRecoveryAccount = await program.account.socialRecovery.fetch(socialRecovery.publicKey);
+    assert.strictEqual(socialRecoveryAccount.nonce, nonce);
+    assert.ok(socialRecoveryAccount.threshold.eq(new anchor.BN(2)));
+    assert.deepStrictEqual(socialRecoveryAccount.allies, allies);
+    assert.ok(socialRecoveryAccount.allianceSeqno === 0);
 
     const pid = program.programId;
     const accounts = [
       {
-        pubkey: multisig.publicKey,
+        pubkey: socialRecovery.publicKey,
         isWritable: true,
         isSigner: false,
       },
       {
-        pubkey: multisigSigner,
+        pubkey: socialRecoverySigner,
         isWritable: false,
         isSigner: true,
       },
     ];
-    const newOwners = [ownerA.publicKey, ownerB.publicKey, ownerD.publicKey];
-    const data = program.coder.instruction.encode("set_owners", {
-      owners: newOwners,
+    const newAllies = [allyA.publicKey, allyB.publicKey, allyD.publicKey];
+    const data = program.coder.instruction.encode("set_allies", {
+      allies: newAllies,
     });
 
     const transaction = anchor.web3.Keypair.generate();
     const txSize = 1000; // Big enough, cuz I'm lazy.
-    await program.rpc.createTransaction(pid, accounts, data, {
+    await program.rpc.executetransaction(pid, accounts, data, {
       accounts: {
-        multisig: multisig.publicKey,
+        socialRecovery: socialRecovery.publicKey,
         transaction: transaction.publicKey,
-        proposer: ownerA.publicKey,
-        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
       },
       instructions: [
         await program.account.transaction.createInstruction(
@@ -78,43 +77,41 @@ describe("multisig", () => {
           txSize
         ),
       ],
-      signers: [transaction, ownerA],
+      signers: [transaction, allyA],
     });
-
-    const txAccount = await program.account.transaction.fetch(transaction.publicKey);
 
     assert.ok(txAccount.programId.equals(pid));
     assert.deepStrictEqual(txAccount.accounts, accounts);
     assert.deepStrictEqual(txAccount.data, data);
-    assert.ok(txAccount.multisig.equals(multisig.publicKey));
+    assert.ok(txAccount.socialRecovery.equals(socialRecovery.publicKey));
     assert.deepStrictEqual(txAccount.didExecute, false);
-    assert.ok(txAccount.ownerSetSeqno === 0);
+    assert.ok(txAccount.allySetSeqno === 0);
 
-    // Other owner approves transactoin.
+    // Other ally approves transactoin.
     await program.rpc.approve({
       accounts: {
-        multisig: multisig.publicKey,
+        socialRecovery: socialRecovery.publicKey,
         transaction: transaction.publicKey,
-        owner: ownerB.publicKey,
+        ally: allyB.publicKey,
       },
-      signers: [ownerB],
+      signers: [allyB],
     });
 
     // Now that we've reached the threshold, send the transactoin.
     await program.rpc.executeTransaction({
       accounts: {
-        multisig: multisig.publicKey,
-        multisigSigner,
+        socialRecovery: socialRecovery.publicKey,
+        socialRecoverySigner,
         transaction: transaction.publicKey,
       },
       remainingAccounts: program.instruction.setOwners
         .accounts({
-          multisig: multisig.publicKey,
-          multisigSigner,
+          socialRecovery: socialRecovery.publicKey,
+          socialRecoverySigner,
         })
         // Change the signer status on the vendor signer since it's signed by the program, not the client.
         .map((meta) =>
-          meta.pubkey.equals(multisigSigner)
+          meta.pubkey.equals(socialRecoverySigner)
             ? { ...meta, isSigner: false }
             : meta
         )
@@ -125,11 +122,11 @@ describe("multisig", () => {
         }),
     });
 
-    multisigAccount = await program.account.multisig.fetch(multisig.publicKey);
+    socialRecoveryAccount = await program.account.socialRecovery.fetch(socialRecovery.publicKey);
 
-    assert.strictEqual(multisigAccount.nonce, nonce);
-    assert.ok(multisigAccount.threshold.eq(new anchor.BN(2)));
-    assert.deepStrictEqual(multisigAccount.owners, newOwners);
-    assert.ok(multisigAccount.ownerSetSeqno === 1);
+    assert.strictEqual(socialRecoveryAccount.nonce, nonce);
+    assert.ok(socialRecoveryAccount.threshold.eq(new anchor.BN(2)));
+    assert.deepStrictEqual(socialRecoveryAccount.allies, newOwners);
+    assert.ok(socialRecoveryAccount.allySetSeqno === 1);
   });
 });
